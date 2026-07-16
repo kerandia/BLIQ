@@ -19,6 +19,10 @@ const modeEl = document.getElementById("mode")!;
 const logEl = document.getElementById("log")!;
 
 function logEvent(actor: string, kind: string, message: string) {
+  if (logEl.dataset.empty) {
+    logEl.textContent = "";
+    delete logEl.dataset.empty;
+  }
   const div = document.createElement("div");
   div.className = `evt ${kind}`;
   div.innerHTML = `<span class="actor">[${actor}]</span> ${message}`;
@@ -48,17 +52,15 @@ function showRoute(data: RouteData) {
   mapFrame.src = `https://maps.google.com/maps?saddr=${saddr}&daddr=${daddr}&output=embed`;
   routeCard.innerHTML = `
     <div>
-      <div style="font-size:1.15rem; font-weight:700">${restaurant.name}</div>
-      <div style="color:#8b93a7; font-size:0.85rem">
+      <div class="route-name">${restaurant.name}</div>
+      <div class="route-meta">
         ⭐ ${restaurant.rating ?? "?"} (${restaurant.ratingCount ?? "?"} reviews)
         · 🚗 ${etaMinutes} min · ${distanceKm} km
       </div>
     </div>
-    <a href="${mapsLink}" target="_blank"
-       style="background:#4f7cff; color:white; text-decoration:none; font-weight:600; padding:0.6rem 1rem; border-radius:10px; white-space:nowrap">
-      Navigate ▸
-    </a>`;
+    <a class="btn-navigate" href="${mapsLink}" target="_blank">Navigate ▸</a>`;
   mapPanel.hidden = false;
+  mapPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 /** When a job finishes, fetch its structured result and render the map. */
@@ -133,8 +135,8 @@ let micMuted = false;
 function applyMute(muted: boolean) {
   micMuted = muted;
   setMicMuted(muted);
-  muteBtn.textContent = muted ? "🎙️ Unmute mic (or hold Space)" : "🔇 Mute mic";
-  muteBtn.style.background = muted ? "#d64545" : "#2a3550";
+  muteBtn.textContent = muted ? "Unmute mic" : "Mute mic";
+  muteBtn.classList.toggle("is-muted", muted);
   modeEl.textContent = muted ? "🔇 muted" : "🎙️ listening";
 }
 
