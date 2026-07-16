@@ -76,13 +76,14 @@ export async function runTripJob(job: Job, request: TripRequest): Promise<void> 
 
     job.result = result.spokenSummary;
     job.data = result;
-    setJobStatus(job, "done", "Route is ready");
+    // Emit the result BEFORE the terminal status — "done" closes SSE streams
     emitJobEvent(job, {
       actor: "concierge",
       kind: "result",
       message: result.spokenSummary,
       data: result as unknown as Record<string, unknown>,
     });
+    setJobStatus(job, "done", "Route is ready");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     job.error = message;

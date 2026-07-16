@@ -97,12 +97,17 @@ app.get("/api/jobs/:id/stream", (req, res) => {
   }
 
   const listener = (event: JobEvent) => {
+    if (res.writableEnded) return;
     res.write(`data: ${JSON.stringify(event)}\n\n`);
-    if (event.kind === "status" && ["done", "error"].includes((event.data as { status?: string })?.status ?? "")) {
+    const status = event.kind === "status" ? (event.data as { status?: string })?.status : undefined;
+    if (status === "done" || status === "error") {
+      jobBus.off(`job:${job.id}`, listener);
       res.end();
     }
   };
   jobBus.on(`job:${job.id}`, listener);
+  // Writing to a closed/aborted response must never take down the process
+  res.on("error", () => jobBus.off(`job:${job.id}`, listener));
   req.on("close", () => jobBus.off(`job:${job.id}`, listener));
 });
 

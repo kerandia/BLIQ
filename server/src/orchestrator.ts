@@ -54,8 +54,8 @@ export async function runJob(job: Job): Promise<void> {
     const finished = await review(job, apiKey, workspace, outputs);
 
     job.result = finished;
-    setJobStatus(job, "done", "Finished work is ready");
     emitJobEvent(job, { actor: "reviewer", kind: "result", message: finished });
+    setJobStatus(job, "done", "Finished work is ready");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     job.error = message;
