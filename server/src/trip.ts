@@ -170,8 +170,15 @@ async function critique(
     description: "Get real driving time and distance from the car to this restaurant (traffic-aware).",
     inputSchema: { type: "object", properties: {}, required: [] },
     execute: async () => {
-      eta = await computeDriveEstimate(request.origin, candidate.placeId);
-      return JSON.stringify(eta);
+      try {
+        eta = await computeDriveEstimate(request.origin, candidate.placeId);
+        return JSON.stringify(eta);
+      } catch (err) {
+        // Don't let a Routes API failure sink the whole pipeline — the critic
+        // can still judge on rating/fit, and we fall back to a rough estimate
+        eta = roughEstimate(request.origin, candidate.location);
+        return JSON.stringify({ ...eta, note: "traffic data unavailable, rough estimate" });
+      }
     },
   };
 
@@ -231,7 +238,12 @@ async function conclude(
 
   const winner = candidates.find((c) => c.placeId === pick.placeId) ?? candidates[0];
   const winnerVerdict = verdicts.find((v) => v.placeId === winner.placeId);
-  const eta = winnerVerdict?.eta ?? (await computeDriveEstimate(request.origin, winner.placeId));
+  let eta = winnerVerdict?.eta;
+  if (!eta) {
+    eta = await computeDriveEstimate(request.origin, winner.placeId).catch(() =>
+      roughEstimate(request.origin, winner.location),
+    );
+  }
 
   return {
     restaurant: winner,
@@ -243,6 +255,18 @@ async function conclude(
       .filter((d) => d.placeId !== winner.placeId)
       .map((d) => ({ name: d.name, verdict: d.critic?.verdict ?? "" })),
   };
+}
+
+/** Haversine distance + city-speed guess, used only when the Routes API is unavailable. */
+function roughEstimate(a: LatLng, b: LatLng): { durationMinutes: number; distanceKm: number } {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  const distanceKm = Math.round(R * 2 * Math.asin(Math.sqrt(h)) * 13) / 10; // ×1.3 road factor
+  return { distanceKm, durationMinutes: Math.max(2, Math.round((distanceKm / 30) * 60)) };
 }
 
 function extractJson<T>(raw: string): T {
