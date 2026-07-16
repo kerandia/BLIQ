@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import { createJob, getJob, listJobs, jobBus, type JobEvent } from "./jobs.js";
 import { runJob } from "./orchestrator.js";
+import { runTripJob } from "./trip.js";
 
 const app = express();
 app.use(cors());
@@ -14,6 +15,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     cursorKey: Boolean(process.env.CURSOR_API_KEY),
+    googleKey: Boolean(process.env.GOOGLE_MAPS_API_KEY),
     elevenKey: Boolean(process.env.ELEVENLABS_API_KEY),
     elevenAgent: Boolean(process.env.ELEVENLABS_AGENT_ID),
   });
@@ -28,6 +30,23 @@ app.post("/api/jobs", (req, res) => {
   }
   const job = createJob(prompt);
   void runJob(job); // fire and forget; progress flows through the event bus
+  res.status(201).json({ id: job.id, status: job.status });
+});
+
+/**
+ * Start a restaurant-route job. This is the endpoint the voice agent's
+ * client tool calls: { query, lat, lng } → { id }.
+ */
+app.post("/api/navigate", (req, res) => {
+  const query = String(req.body?.query ?? "").trim();
+  const lat = Number(req.body?.lat);
+  const lng = Number(req.body?.lng);
+  if (!query || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    res.status(400).json({ error: "query, lat and lng are required" });
+    return;
+  }
+  const job = createJob(query);
+  void runTripJob(job, { query, origin: { lat, lng } });
   res.status(201).json({ id: job.id, status: job.status });
 });
 
@@ -51,9 +70,9 @@ app.get("/api/jobs/:id", (req, res) => {
     res.status(404).json({ error: "job not found" });
     return;
   }
-  const { id, prompt, status, createdAt, result, error } = job;
+  const { id, prompt, status, createdAt, result, data, error } = job;
   const lastEvents = job.events.slice(-5);
-  res.json({ id, prompt, status, createdAt, result, error, lastEvents });
+  res.json({ id, prompt, status, createdAt, result, data, error, lastEvents });
 });
 
 /** Live event stream (SSE) for the dashboard UI. */

@@ -1,23 +1,29 @@
 # BLIQ
 
-**Voice in → orchestrated agents → finished work out.**
+**"I'm hungry" in the car → the best restaurant nearby + a ready-to-drive route.**
 
-Hackathon prototype: a voice agent (ElevenLabs) captures a messy work request, then a
+Hackathon prototype: while driving, you ask the voice agent (ElevenLabs) for food. A
 multi-agent pipeline built on the [Cursor SDK](https://cursor.com/docs/sdk/typescript)
-(planner → parallel workers → reviewer) turns it into a finished deliverable. Progress
-streams live to the dashboard and the voice agent reports it conversationally.
+scouts restaurants via Google Places, sends parallel critic agents to judge each one
+(including the real traffic-aware detour via Google Routes), and a concierge agent picks
+the winner — returning a spoken summary and a Google Maps navigation deep link.
 
 ```
 🎙️ Browser (ElevenLabs voice agent, client tools)
-        │  start_job / check_job
+        │  find_restaurant_route / check_job
         ▼
-🖥️ server (Express)
+🖥️ server (Express)  POST /api/navigate { query, lat, lng }
         │
         ▼
-🤖 Cursor SDK orchestration
-   planner ──► worker 1 ┐
-           ──► worker 2 ├──► reviewer ──► FINISHED.md + spoken summary
-           ──► worker 3 ┘
+🤖 Cursor SDK orchestration            🌍 custom tools
+   scout ──────────────────────────►  search_restaurants (Places API)
+     │ shortlist (≤4)
+     ├──► critic 1 ┐
+     ├──► critic 2 ├── parallel ────►  get_drive_eta (Routes API)
+     └──► critic 3 ┘
+             │ scored verdicts
+             ▼
+        concierge ──► winner + spokenSummary + Google Maps deep link
 ```
 
 ## Setup
@@ -29,19 +35,42 @@ npm install
 cp .env.example .env   # fill in CURSOR_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID
 ```
 
-### ElevenLabs agent configuration
+### Google Maps setup
+
+Create a key at [console.cloud.google.com/google/maps-apis](https://console.cloud.google.com/google/maps-apis)
+and enable **Places API (New)** and **Routes API** on it → `GOOGLE_MAPS_API_KEY`.
+
+### ElevenLabs agent configuration (voice teammate: read this)
 
 Create an agent at [elevenlabs.io/app/agents](https://elevenlabs.io/app/agents) and add two
-**client tools** (Agent → Tools → Add tool → Client):
+**client tools** (Agent → Tools → Add tool → Client). The browser implements them in
+`web/src/main.ts` — the dashboard config just declares them so the LLM knows they exist:
 
 | Tool | Parameters | Description for the LLM |
 |------|-----------|--------------------------|
-| `start_job` | `prompt` (string) | Start turning the user's messy request into finished work. Pass the full request, cleaned up, as `prompt`. |
-| `check_job` | `job_id` (string) | Check progress of a running job and report it to the user. |
+| `find_restaurant_route` | `query` (string) | Find a great restaurant near the car and build a driving route. Pass the passenger's craving as `query` (cuisine, vibe, budget — whatever they said). Location is added automatically. |
+| `check_job` | `job_id` (string) | Check progress of a running search. Call every few seconds and narrate what the agents are doing. When done, read the summary aloud. |
 
-Suggested first message / system prompt: the agent interviews the user about what they need,
-calls `start_job` once the request is clear, then periodically calls `check_job` and narrates
-progress.
+Suggested system prompt: *"You are an in-car food concierge. Chat naturally with the driver
+about what they're craving. Once you understand it, call find_restaurant_route with their
+request. While agents work, call check_job periodically and narrate progress briefly
+('the critics are checking drive times...'). When finished, read the spoken summary and
+tell them the route is on screen."*
+
+### Backend contract (for the voice/frontend side)
+
+- `POST /api/navigate` body `{ "query": "cheap good ramen", "lat": 52.36, "lng": 4.90 }` → `201 { "id": "<jobId>" }`
+- `GET /api/jobs/:id` → `{ status, result, data, lastEvents }` where `status` ∈ `queued|planning|working|reviewing|done|error`; on `done`, `result` is the spoken summary and `data` is:
+  ```json
+  {
+    "restaurant": { "name": "...", "rating": 4.6, "address": "...", "placeId": "..." },
+    "etaMinutes": 12,
+    "distanceKm": 4.3,
+    "mapsLink": "https://www.google.com/maps/dir/?api=1&...",
+    "runnersUp": [{ "name": "...", "verdict": "..." }]
+  }
+  ```
+- `GET /api/jobs/:id/stream` — SSE feed of every agent event (great for the live demo panel)
 
 ## Run
 

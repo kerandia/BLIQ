@@ -19,6 +19,8 @@ export interface Job {
   createdAt: number;
   events: JobEvent[];
   result?: string;
+  /** Structured result payload (e.g. restaurant + route for trip jobs) */
+  data?: unknown;
   error?: string;
 }
 

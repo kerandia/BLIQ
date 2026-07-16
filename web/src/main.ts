@@ -30,7 +30,34 @@ function watchJob(jobId: string) {
  * names ("start_job", "check_job") on the agent in the ElevenLabs dashboard
  * (Agent → Tools → Client tool) so the LLM knows they exist.
  */
+function getPosition(): Promise<{ lat: number; lng: number }> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(new Error(`geolocation failed: ${err.message}`)),
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
+  });
+}
+
 const clientTools = {
+  /** "Find me good ramen nearby" → scout/critics/concierge pipeline + route */
+  find_restaurant_route: async ({ query }: { query: string }) => {
+    const { lat, lng } = await getPosition();
+    const res = await fetch("/api/navigate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, lat, lng }),
+    });
+    if (!res.ok) return `Could not start the search: ${await res.text()}`;
+    const job = (await res.json()) as { id: string };
+    watchJob(job.id);
+    logEvent("voice", "log", `Restaurant search started (job ${job.id})`);
+    return (
+      `Job ${job.id} started: agents are scouting restaurants and checking routes. ` +
+      `Poll with check_job every few seconds and narrate progress to the passenger.`
+    );
+  },
   start_job: async ({ prompt }: { prompt: string }) => {
     const res = await fetch("/api/jobs", {
       method: "POST",
@@ -48,10 +75,17 @@ const clientTools = {
     const job = (await res.json()) as {
       status: string;
       result?: string;
+      data?: { mapsLink?: string; etaMinutes?: number; restaurant?: { name?: string } };
       error?: string;
       lastEvents: { actor: string; message: string }[];
     };
-    if (job.status === "done") return `Finished! Result: ${job.result}`;
+    if (job.status === "done") {
+      if (job.data?.mapsLink) {
+        logEvent("route", "result", `<a href="${job.data.mapsLink}" target="_blank">Open route in Google Maps → ${job.data.restaurant?.name ?? ""}</a>`);
+        return `${job.result} The route is on screen — about ${job.data.etaMinutes} minutes away.`;
+      }
+      return `Finished! Result: ${job.result}`;
+    }
     if (job.status === "error") return `The job failed: ${job.error}`;
     const recent = job.lastEvents.map((e) => `${e.actor}: ${e.message}`).join(" | ");
     return `Status: ${job.status}. Recent activity: ${recent}`;
