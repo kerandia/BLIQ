@@ -667,6 +667,16 @@
           <button id="toggle" class="btn-primary" type="button">Start voice session</button>
           <button id="mute" class="btn-mute" type="button" hidden>Mute mic</button>
           <div id="mode"></div>
+          <div
+            id="micMeter"
+            hidden
+            style="height: 6px; border-radius: 3px; background: var(--color-soft-stone); overflow: hidden; margin-bottom: var(--spacing-8)"
+          >
+            <div
+              id="micMeterFill"
+              style="height: 100%; width: 0%; background: var(--color-clay); transition: width 80ms linear"
+            ></div>
+          </div>
           <div id="muteHint" hidden>While muted, hold <kbd>Space</kbd> to talk.</div>
 
           <hr class="divider" />

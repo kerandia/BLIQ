@@ -157,6 +157,32 @@ document.addEventListener("keyup", (e) => {
   modeEl.textContent = "🔇 muted";
 });
 
+const micMeter = document.getElementById("micMeter")!;
+const micMeterFill = document.getElementById("micMeterFill") as HTMLDivElement;
+
+/** Log mic permission + active input device so "it doesn't hear me" is debuggable. */
+async function logMicDiagnostics() {
+  try {
+    const perm = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    logEvent("mic-check", perm.state === "granted" ? "log" : "error", `permission: ${perm.state}`);
+  } catch {
+    logEvent("mic-check", "log", "permission: unknown (browser does not expose it)");
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((d) => d.kind === "audioinput");
+    logEvent(
+      "mic-check",
+      inputs.length ? "log" : "error",
+      inputs.length
+        ? `inputs: ${inputs.map((d) => d.label || "(unnamed)").join(" | ")}`
+        : "no audio input devices found",
+    );
+  } catch (err) {
+    logEvent("mic-check", "error", `device enumeration failed: ${String(err)}`);
+  }
+}
+
 setVoiceCallbacks({
   onCallStart: () => {
     statusEl.textContent = "connected";
@@ -164,7 +190,9 @@ setVoiceCallbacks({
     toggleBtn.classList.add("live");
     muteBtn.hidden = false;
     muteHint.hidden = false;
+    micMeter.hidden = false;
     applyMute(false);
+    void logMicDiagnostics();
     // Seed GPS once so find_nearby_restaurants has a position.
     void getPosition()
       .then(({ lat, lng }) => updateCarPosition(lat, lng))
@@ -178,6 +206,14 @@ setVoiceCallbacks({
     micMuted = false;
     muteBtn.hidden = true;
     muteHint.hidden = true;
+    micMeter.hidden = true;
+    micMeterFill.style.width = "0%";
+  },
+  // Mic input level 0..1 — if this bar never moves while you talk, the browser
+  // isn't capturing your mic (permission or wrong device); if it moves but no
+  // transcript appears, the problem is on the Vapi/Deepgram side.
+  onVolumeLevel: (level) => {
+    micMeterFill.style.width = `${Math.min(100, Math.round(level * 140))}%`;
   },
   onAssistantSpeechStart: () => {
     modeEl.textContent = "🔊 agent speaking";
@@ -186,7 +222,12 @@ setVoiceCallbacks({
     modeEl.textContent = micMuted ? "🔇 muted" : "🎙️ listening";
   },
   onTranscript: ({ role, text, type }) => {
-    if (type !== "final" || !text.trim()) return;
+    if (!text.trim()) return;
+    // Live partials in the mode line — instant proof the pipeline hears you
+    if (type === "partial") {
+      if (role === "user") modeEl.textContent = `🎙️ “${text}”`;
+      return;
+    }
     logEvent(role === "assistant" ? "voice-agent" : "you", "log", text);
   },
   onError: (error) => {
