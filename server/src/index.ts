@@ -1,0 +1,108 @@
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import { createJob, getJob, listJobs, jobBus, type JobEvent } from "./jobs.js";
+import { runJob } from "./orchestrator.js";
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = Number(process.env.PORT ?? 3001);
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    cursorKey: Boolean(process.env.CURSOR_API_KEY),
+    elevenKey: Boolean(process.env.ELEVENLABS_API_KEY),
+    elevenAgent: Boolean(process.env.ELEVENLABS_AGENT_ID),
+  });
+});
+
+/** Start an orchestration job. Called by the voice agent's client tool. */
+app.post("/api/jobs", (req, res) => {
+  const prompt = String(req.body?.prompt ?? "").trim();
+  if (!prompt) {
+    res.status(400).json({ error: "prompt is required" });
+    return;
+  }
+  const job = createJob(prompt);
+  void runJob(job); // fire and forget; progress flows through the event bus
+  res.status(201).json({ id: job.id, status: job.status });
+});
+
+app.get("/api/jobs", (_req, res) => {
+  res.json(
+    listJobs().map(({ id, prompt, status, createdAt, result, error }) => ({
+      id,
+      prompt,
+      status,
+      createdAt,
+      result,
+      error,
+    })),
+  );
+});
+
+/** Poll a job — the voice agent uses this to report progress conversationally. */
+app.get("/api/jobs/:id", (req, res) => {
+  const job = getJob(req.params.id);
+  if (!job) {
+    res.status(404).json({ error: "job not found" });
+    return;
+  }
+  const { id, prompt, status, createdAt, result, error } = job;
+  const lastEvents = job.events.slice(-5);
+  res.json({ id, prompt, status, createdAt, result, error, lastEvents });
+});
+
+/** Live event stream (SSE) for the dashboard UI. */
+app.get("/api/jobs/:id/stream", (req, res) => {
+  const job = getJob(req.params.id);
+  if (!job) {
+    res.status(404).json({ error: "job not found" });
+    return;
+  }
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  // Replay history so late subscribers see the full timeline
+  for (const event of job.events) {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+
+  const listener = (event: JobEvent) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (event.kind === "status" && ["done", "error"].includes((event.data as { status?: string })?.status ?? "")) {
+      res.end();
+    }
+  };
+  jobBus.on(`job:${job.id}`, listener);
+  req.on("close", () => jobBus.off(`job:${job.id}`, listener));
+});
+
+/** Token endpoint so the browser can talk to a private ElevenLabs agent over WebRTC. */
+app.get("/api/eleven/token", async (_req, res) => {
+  const agentId = process.env.ELEVENLABS_AGENT_ID;
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!agentId || !apiKey) {
+    res.status(500).json({ error: "ELEVENLABS_AGENT_ID / ELEVENLABS_API_KEY not set" });
+    return;
+  }
+  const response = await fetch(
+    `https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${agentId}`,
+    { headers: { "xi-api-key": apiKey } },
+  );
+  if (!response.ok) {
+    res.status(502).json({ error: `ElevenLabs token request failed: ${response.status}` });
+    return;
+  }
+  const body = (await response.json()) as { token: string };
+  res.json({ token: body.token, agentId });
+});
+
+app.listen(PORT, () => {
+  console.log(`BLIQ server listening on http://localhost:${PORT}`);
+});

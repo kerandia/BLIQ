@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BLIQ — voice to finished work</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #0b0e14;
+        color: #e6e9ef;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid #1e2430;
+      }
+      h1 { font-size: 1.1rem; margin: 0; letter-spacing: 0.08em; }
+      #status { font-size: 0.85rem; color: #8b93a7; }
+      main {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 1rem;
+        padding: 1rem 1.5rem;
+      }
+      .panel {
+        background: #11151f;
+        border: 1px solid #1e2430;
+        border-radius: 12px;
+        padding: 1rem;
+      }
+      button {
+        width: 100%;
+        padding: 0.9rem;
+        border-radius: 10px;
+        border: none;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        background: #4f7cff;
+        color: white;
+      }
+      button.live { background: #d64545; }
+      #mode { margin-top: 0.75rem; font-size: 0.9rem; color: #8b93a7; }
+      #log {
+        font-family: ui-monospace, monospace;
+        font-size: 0.8rem;
+        overflow-y: auto;
+        max-height: 75vh;
+        white-space: pre-wrap;
+      }
+      .evt { padding: 0.25rem 0; border-bottom: 1px solid #171c27; }
+      .evt .actor { color: #7dd3a0; }
+      .evt.error .actor { color: #d64545; }
+      .evt.status .actor { color: #4f7cff; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>BLIQ</h1>
+      <span id="status">disconnected</span>
+    </header>
+    <main>
+      <div class="panel">
+        <button id="toggle">Start voice session</button>
+        <div id="mode"></div>
+      </div>
+      <div class="panel">
+        <div id="log">Orchestration events will appear here…</div>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

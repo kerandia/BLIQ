@@ -1,0 +1,23 @@
+{
+  "name": "bliq",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Voice-driven multi-agent orchestration: turn messy work into finished work (Cursor SDK + ElevenLabs Agents)",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:server dev:web",
+    "dev:server": "npm run dev --workspace server",
+    "dev:web": "npm run dev --workspace web",
+    "build": "npm run build --workspace server && npm run build --workspace web",
+    "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
