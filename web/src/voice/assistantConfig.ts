@@ -18,7 +18,13 @@ Rules:
 - When the driver asks to save a place, call save_location with the place_id and a short label, then confirm in five words or fewer, e.g. "Saved."
 - You receive system messages like "User is now at: {lat}, {lng}" as the car moves. Treat the most recent one as the current position. Use it silently for find_nearby_restaurants — never mention coordinates or that you received an update.
 - If you don't have a position yet, ask the driver for their area or to enable location.
-- If a tool fails, say you couldn't get that right now. Do not speculate.`;
+- If a tool fails, say you couldn't get that right now. Do not speculate.
+
+Recommendations (the main feature):
+- When the driver describes a craving or asks for a recommendation ("find me good ramen", "I'm hungry, something cheap"), call find_best_restaurant_route with their request as query plus the current position. This launches a team of AI agents: a scout searches, critics judge each candidate in parallel with live drive times, and a concierge picks the winner.
+- It takes about two minutes. Tell the driver the search team is on it. Then call check_route_job every 15-20 seconds; between polls, briefly narrate recent_activity in plain words ("the critics are checking drive times now").
+- When status is done, read spoken_summary aloud, then tell the driver the route is on the dashboard screen.
+- Use find_nearby_restaurants only for quick factual questions ("what's around here?"), not for recommendations.`;
 
 /**
  * Transient assistant definition, passed to `vapi.start(...)`.
@@ -69,6 +75,44 @@ export const assistantConfig: CreateAssistantDTO = {
               place_id: { type: "string", description: "Google Places place_id of the restaurant." },
             },
             required: ["place_id"],
+          },
+        },
+        server: { url: TOOL_SERVER_URL },
+      },
+      {
+        type: "function",
+        function: {
+          name: "find_best_restaurant_route",
+          description:
+            "Launch the multi-agent restaurant search (scout + parallel critics + concierge) for a craving or recommendation request. Returns a job_id immediately; poll check_route_job for progress. Use the most recent car position for lat/lng.",
+          parameters: {
+            type: "object",
+            properties: {
+              query: {
+                type: "string",
+                description:
+                  "The driver's craving in their own words, e.g. 'good ramen, cozy, not too expensive'.",
+              },
+              lat: { type: "number", description: "Latitude of the current car position." },
+              lng: { type: "number", description: "Longitude of the current car position." },
+            },
+            required: ["query", "lat", "lng"],
+          },
+        },
+        server: { url: TOOL_SERVER_URL },
+      },
+      {
+        type: "function",
+        function: {
+          name: "check_route_job",
+          description:
+            "Check progress of a running multi-agent restaurant search. Returns status and recent_activity while running; when done, returns spoken_summary to read aloud plus the winning restaurant and drive time.",
+          parameters: {
+            type: "object",
+            properties: {
+              job_id: { type: "string", description: "The job_id from find_best_restaurant_route." },
+            },
+            required: ["job_id"],
           },
         },
         server: { url: TOOL_SERVER_URL },

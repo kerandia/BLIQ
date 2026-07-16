@@ -23,7 +23,11 @@ function logEvent(actor: string, kind: string, message: string) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+const watchedJobs = new Set<string>();
+
 function watchJob(jobId: string) {
+  if (watchedJobs.has(jobId)) return;
+  watchedJobs.add(jobId);
   const source = new EventSource(`/api/jobs/${jobId}/stream`);
   source.onmessage = (e) => {
     const evt = JSON.parse(e.data) as { actor: string; kind: string; message: string };
@@ -31,6 +35,20 @@ function watchJob(jobId: string) {
   };
   source.onerror = () => source.close();
 }
+
+// Voice-started jobs are created server-side (via the Vapi webhook), so the
+// browser never learns their ids directly — poll the job list and auto-watch
+// anything new.
+setInterval(async () => {
+  try {
+    const res = await fetch("/api/jobs");
+    if (!res.ok) return;
+    const jobs = (await res.json()) as { id: string }[];
+    for (const job of jobs) watchJob(job.id);
+  } catch {
+    // server not up yet — retry on next tick
+  }
+}, 3000);
 
 async function getPosition(): Promise<{ lat: number; lng: number }> {
   return new Promise((resolve, reject) => {

@@ -162,6 +162,50 @@ async function dispatchVoiceTool(name: string, args: Record<string, unknown>): P
       );
     case "get_restaurant_info":
       return getRestaurantInfo(String(args.place_id));
+    // Kicks off the Cursor SDK multi-agent pipeline (scout → critics → concierge).
+    // Returns immediately with a job_id — the assistant polls check_route_job.
+    case "find_best_restaurant_route": {
+      const query = String(args.query ?? "").trim();
+      const lat = Number(args.lat);
+      const lng = Number(args.lng);
+      if (!query || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        throw new Error("query, lat and lng are required");
+      }
+      const job = createJob(query);
+      void runTripJob(job, { query, origin: { lat, lng } });
+      return {
+        job_id: job.id,
+        message:
+          "Multi-agent search started: a scout is finding candidates, critics will judge " +
+          "each one in parallel, a concierge picks the winner. Takes about two minutes — " +
+          "poll check_route_job and keep the driver posted.",
+      };
+    }
+    case "check_route_job": {
+      const job = getJob(String(args.job_id ?? ""));
+      if (!job) throw new Error("job not found");
+      if (job.status === "done") {
+        const data = job.data as {
+          restaurant?: { name?: string; rating?: number; address?: string };
+          etaMinutes?: number;
+          distanceKm?: number;
+        } | undefined;
+        return {
+          status: "done",
+          spoken_summary: job.result,
+          restaurant: data?.restaurant?.name,
+          rating: data?.restaurant?.rating,
+          eta_minutes: data?.etaMinutes,
+          distance_km: data?.distanceKm,
+          note: "The route link is already on the driver's dashboard screen.",
+        };
+      }
+      if (job.status === "error") return { status: "error", error: job.error };
+      return {
+        status: job.status,
+        recent_activity: job.events.slice(-3).map((e) => `${e.actor}: ${e.message}`),
+      };
+    }
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
