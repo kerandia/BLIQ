@@ -72,7 +72,11 @@
     <main>
       <div class="panel">
         <button id="toggle">Start voice session</button>
+        <button id="mute" style="margin-top:0.5rem; background:#2a3550" hidden>🔇 Mute mic</button>
         <div id="mode"></div>
+        <div id="muteHint" style="font-size:0.75rem; color:#8b93a7; margin-top:0.4rem" hidden>
+          While muted, hold <b>Space</b> to talk.
+        </div>
         <hr style="border-color:#1e2430; margin:1rem 0" />
         <form id="textForm">
           <input
@@ -83,8 +87,20 @@
           <button type="submit" style="background:#2a3550">Find &amp; route</button>
         </form>
       </div>
-      <div class="panel">
-        <div id="log">Orchestration events will appear here…</div>
+      <div style="display:flex; flex-direction:column; gap:1rem; min-width:0">
+        <div class="panel" id="mapPanel" hidden>
+          <div id="routeCard" style="display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:0.75rem; flex-wrap:wrap"></div>
+          <iframe
+            id="mapFrame"
+            title="Route map"
+            style="width:100%; height:340px; border:0; border-radius:10px; filter:invert(0.9) hue-rotate(180deg)"
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+          ></iframe>
+        </div>
+        <div class="panel">
+          <div id="log">Orchestration events will appear here…</div>
+        </div>
       </div>
     </main>
     <script type="module" src="/src/main.ts"></script>

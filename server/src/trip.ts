@@ -21,6 +21,7 @@ export interface TripRequest {
 
 export interface TripResult {
   restaurant: PlaceCandidate;
+  origin: LatLng;
   etaMinutes: number;
   distanceKm: number;
   mapsLink: string;
@@ -247,6 +248,7 @@ async function conclude(
 
   return {
     restaurant: winner,
+    origin: request.origin,
     etaMinutes: eta.durationMinutes,
     distanceKm: eta.distanceKm,
     mapsLink: mapsDeepLink(request.origin, winner.name, winner.placeId),

@@ -7,6 +7,8 @@ export {
   updateCarPosition,
   setVoiceCallbacks,
   isCallActive,
+  setMicMuted,
+  isMicMuted,
 } from "./vapiClient";
 export type { VoiceCallbacks, TranscriptEntry } from "./vapiClient";
 export { onSaveLocation, SAVE_LOCATION_EVENT } from "./events";

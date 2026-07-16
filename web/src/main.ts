@@ -6,11 +6,14 @@ import {
   stopVoice,
   setVoiceCallbacks,
   isCallActive,
+  setMicMuted,
   onSaveLocation,
   updateCarPosition,
 } from "./voice";
 
 const toggleBtn = document.getElementById("toggle") as HTMLButtonElement;
+const muteBtn = document.getElementById("mute") as HTMLButtonElement;
+const muteHint = document.getElementById("muteHint")!;
 const statusEl = document.getElementById("status")!;
 const modeEl = document.getElementById("mode")!;
 const logEl = document.getElementById("log")!;
@@ -23,6 +26,49 @@ function logEvent(actor: string, kind: string, message: string) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+const mapPanel = document.getElementById("mapPanel")!;
+const mapFrame = document.getElementById("mapFrame") as HTMLIFrameElement;
+const routeCard = document.getElementById("routeCard")!;
+
+interface RouteData {
+  restaurant: { name: string; rating?: number; ratingCount?: number; address?: string };
+  origin: { lat: number; lng: number };
+  etaMinutes: number;
+  distanceKm: number;
+  mapsLink: string;
+}
+
+/** Show the route on the dashboard: embedded directions map + result card. */
+function showRoute(data: RouteData) {
+  const { restaurant, origin, etaMinutes, distanceKm, mapsLink } = data;
+  const saddr = `${origin.lat},${origin.lng}`;
+  const daddr = encodeURIComponent(`${restaurant.name}, ${restaurant.address ?? ""}`);
+  // Keyless Google Maps directions embed — good enough for the prototype;
+  // swap for the Maps Embed API iframe if we want an official/production map.
+  mapFrame.src = `https://maps.google.com/maps?saddr=${saddr}&daddr=${daddr}&output=embed`;
+  routeCard.innerHTML = `
+    <div>
+      <div style="font-size:1.15rem; font-weight:700">${restaurant.name}</div>
+      <div style="color:#8b93a7; font-size:0.85rem">
+        ⭐ ${restaurant.rating ?? "?"} (${restaurant.ratingCount ?? "?"} reviews)
+        · 🚗 ${etaMinutes} min · ${distanceKm} km
+      </div>
+    </div>
+    <a href="${mapsLink}" target="_blank"
+       style="background:#4f7cff; color:white; text-decoration:none; font-weight:600; padding:0.6rem 1rem; border-radius:10px; white-space:nowrap">
+      Navigate ▸
+    </a>`;
+  mapPanel.hidden = false;
+}
+
+/** When a job finishes, fetch its structured result and render the map. */
+async function onJobDone(jobId: string) {
+  const res = await fetch(`/api/jobs/${jobId}`);
+  if (!res.ok) return;
+  const job = (await res.json()) as { data?: RouteData };
+  if (job.data?.mapsLink && job.data.origin) showRoute(job.data);
+}
+
 const watchedJobs = new Set<string>();
 
 function watchJob(jobId: string) {
@@ -30,8 +76,14 @@ function watchJob(jobId: string) {
   watchedJobs.add(jobId);
   const source = new EventSource(`/api/jobs/${jobId}/stream`);
   source.onmessage = (e) => {
-    const evt = JSON.parse(e.data) as { actor: string; kind: string; message: string };
+    const evt = JSON.parse(e.data) as {
+      actor: string;
+      kind: string;
+      message: string;
+      data?: { status?: string };
+    };
     logEvent(evt.actor, evt.kind, evt.message);
+    if (evt.kind === "status" && evt.data?.status === "done") void onJobDone(jobId);
   };
   source.onerror = () => source.close();
 }
@@ -75,11 +127,42 @@ async function startTripSearch(query: string): Promise<string> {
   return `Job ${job.id} started — watch the live log for scout / critics / concierge.`;
 }
 
+// ── Mic mute (open mics transcribe everything — mute between questions) ──
+let micMuted = false;
+
+function applyMute(muted: boolean) {
+  micMuted = muted;
+  setMicMuted(muted);
+  muteBtn.textContent = muted ? "🎙️ Unmute mic (or hold Space)" : "🔇 Mute mic";
+  muteBtn.style.background = muted ? "#d64545" : "#2a3550";
+  modeEl.textContent = muted ? "🔇 muted" : "🎙️ listening";
+}
+
+muteBtn.addEventListener("click", () => applyMute(!micMuted));
+
+// Push-to-talk while muted: hold Space to open the mic
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || e.repeat || !micMuted) return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  e.preventDefault();
+  setMicMuted(false);
+  modeEl.textContent = "🎙️ push-to-talk";
+});
+document.addEventListener("keyup", (e) => {
+  if (e.code !== "Space" || !micMuted) return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  setMicMuted(true);
+  modeEl.textContent = "🔇 muted";
+});
+
 setVoiceCallbacks({
   onCallStart: () => {
     statusEl.textContent = "connected";
     toggleBtn.textContent = "End voice session";
     toggleBtn.classList.add("live");
+    muteBtn.hidden = false;
+    muteHint.hidden = false;
+    applyMute(false);
     // Seed GPS once so find_nearby_restaurants has a position.
     void getPosition()
       .then(({ lat, lng }) => updateCarPosition(lat, lng))
@@ -90,12 +173,15 @@ setVoiceCallbacks({
     toggleBtn.textContent = "Start voice session";
     toggleBtn.classList.remove("live");
     modeEl.textContent = "";
+    micMuted = false;
+    muteBtn.hidden = true;
+    muteHint.hidden = true;
   },
   onAssistantSpeechStart: () => {
     modeEl.textContent = "🔊 agent speaking";
   },
   onAssistantSpeechEnd: () => {
-    modeEl.textContent = "🎙️ listening";
+    modeEl.textContent = micMuted ? "🔇 muted" : "🎙️ listening";
   },
   onTranscript: ({ role, text, type }) => {
     if (type !== "final" || !text.trim()) return;

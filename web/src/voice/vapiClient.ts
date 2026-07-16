@@ -128,6 +128,21 @@ export async function stopVoice(): Promise<void> {
 }
 
 /**
+ * Mute/unmute the microphone WITHOUT ending the call. Use this when the
+ * driver is talking to someone else — an open mic transcribes everything
+ * and the assistant may act on overheard speech.
+ */
+export function setMicMuted(muted: boolean): void {
+  if (!vapi || !callActive) return;
+  vapi.setMuted(muted);
+}
+
+export function isMicMuted(): boolean {
+  if (!vapi || !callActive) return false;
+  return vapi.isMuted();
+}
+
+/**
  * GPS contract: inject current position as a silent system message so the
  * assistant can fill lat/lng on find_nearby_restaurants.
  *
