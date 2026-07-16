@@ -123,6 +123,22 @@ async function start() {
   });
 }
 
+// Text fallback: exercise the agent pipeline without a voice session
+const textForm = document.getElementById("textForm") as HTMLFormElement;
+const cravingInput = document.getElementById("craving") as HTMLInputElement;
+textForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const query = cravingInput.value.trim();
+  if (!query) return;
+  cravingInput.value = "";
+  try {
+    const reply = await clientTools.find_restaurant_route({ query });
+    logEvent("dashboard", "log", reply);
+  } catch (err) {
+    logEvent("dashboard", "error", err instanceof Error ? err.message : String(err));
+  }
+});
+
 toggleBtn.addEventListener("click", async () => {
   if (conversation) {
     await conversation.endSession();
