@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@elevenlabs/client": "latest"
+    "@vapi-ai/web": "^2.6.1"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

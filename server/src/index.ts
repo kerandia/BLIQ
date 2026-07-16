@@ -7,6 +7,7 @@ import cors from "cors";
 import { createJob, getJob, listJobs, jobBus, type JobEvent } from "./jobs.js";
 import { runJob } from "./orchestrator.js";
 import { runTripJob } from "./trip.js";
+import { findNearbyRestaurants, getRestaurantInfo } from "./voiceTools.js";
 
 const app = express();
 app.use(cors());
@@ -104,6 +105,83 @@ app.get("/api/jobs/:id/stream", (req, res) => {
   jobBus.on(`job:${job.id}`, listener);
   req.on("close", () => jobBus.off(`job:${job.id}`, listener));
 });
+
+/**
+ * Vapi tool-calls webhook.
+ * Vapi's backend POSTs here for server tools (find_nearby_restaurants,
+ * get_restaurant_info). Must reply within ~7.5s with:
+ *   { results: [{ toolCallId, result | error }] }
+ * Always HTTP 200; result/error must be strings; toolCallId must echo.
+ * This URL must be publicly reachable (ngrok in local dev).
+ */
+app.post("/api/tools", async (req, res) => {
+  const message = req.body?.message;
+
+  if (message?.type !== "tool-calls" || !Array.isArray(message.toolCallList)) {
+    res.status(200).json({});
+    return;
+  }
+
+  interface IncomingToolCall {
+    id: string;
+    name?: string;
+    arguments?: Record<string, unknown> | string;
+    parameters?: Record<string, unknown>;
+    function?: { name: string; arguments?: Record<string, unknown> | string };
+  }
+
+  const results = await Promise.all(
+    (message.toolCallList as IncomingToolCall[]).map(async (toolCall) => {
+      const name = toolCall.name ?? toolCall.function?.name ?? "unknown";
+      const args = extractToolArguments(toolCall);
+      console.log(`[tools] ${name}`, args);
+
+      try {
+        const result = await dispatchVoiceTool(name, args);
+        return { toolCallId: toolCall.id, result: JSON.stringify(result) };
+      } catch (err) {
+        console.error(`[tools] ${name} failed:`, err);
+        return {
+          toolCallId: toolCall.id,
+          error: `Tool ${name} failed. Tell the driver you could not get that right now.`,
+        };
+      }
+    }),
+  );
+
+  res.status(200).json({ results });
+});
+
+async function dispatchVoiceTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  switch (name) {
+    case "find_nearby_restaurants":
+      return findNearbyRestaurants(
+        Number(args.lat),
+        Number(args.lng),
+        args.radius !== undefined ? Number(args.radius) : undefined,
+      );
+    case "get_restaurant_info":
+      return getRestaurantInfo(String(args.place_id));
+    default:
+      throw new Error(`Unknown tool: ${name}`);
+  }
+}
+
+function extractToolArguments(toolCall: {
+  arguments?: Record<string, unknown> | string;
+  parameters?: Record<string, unknown>;
+  function?: { arguments?: Record<string, unknown> | string };
+}): Record<string, unknown> {
+  const raw = toolCall.arguments ?? toolCall.parameters ?? toolCall.function?.arguments ?? {};
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return raw;
+}
 
 /** Token endpoint so the browser can talk to a private ElevenLabs agent over WebRTC. */
 app.get("/api/eleven/token", async (_req, res) => {
