@@ -1,4 +1,7 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+// Load the repo-root .env regardless of where the server is launched from
+dotenv.config({ path: new URL("../../.env", import.meta.url).pathname });
+dotenv.config(); // also allow a local server/.env override
 import express from "express";
 import cors from "cors";
 import { createJob, getJob, listJobs, jobBus, type JobEvent } from "./jobs.js";
@@ -15,7 +18,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     cursorKey: Boolean(process.env.CURSOR_API_KEY),
-    googleKey: Boolean(process.env.GOOGLE_MAPS_API_KEY),
+    googleKey: Boolean(process.env.GOOGLE_MAPS_API_KEY ?? process.env.GOOGLE_API_KEY),
     elevenKey: Boolean(process.env.ELEVENLABS_API_KEY),
     elevenAgent: Boolean(process.env.ELEVENLABS_AGENT_ID),
   });
